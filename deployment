@@ -1,0 +1,55 @@
+pipeline {
+  agent any
+  
+  environment {
+    DOCKER_REGISTRY = 'your-docker-registry.com'
+    APP_NAME = 'demo-app'
+    APP_VERSION = '1.0.0'
+    KUBE_NAMESPACE = 'demo-namespace'
+    KUBE_CLUSTER = 'demo-cluster'
+    KUBE_CONFIG = '/path/to/kube/config'
+  }
+  
+  stages {
+    stage('Build and Push Docker Image') {
+      steps {
+        script {
+          def dockerImage = "${DOCKER_REGISTRY}/${APP_NAME}:${APP_VERSION}"
+          sh "docker build -t ${dockerImage} ."
+          sh "docker push ${dockerImage}"
+        }
+      }
+    }
+    
+    stage('Deploy to Kubernetes') {
+      steps {
+        script {
+          def kubeContext = "kubectl --kubeconfig=${KUBE_CONFIG} --context=${KUBE_CLUSTER}"
+          sh "${kubeContext} create namespace ${KUBE_NAMESPACE} || true"
+          sh "${kubeContext} config set-context --current --namespace=${KUBE_NAMESPACE}"
+          sh "${kubeContext} apply -f kubernetes/deployment.yaml"
+          sh "${kubeContext} apply -f kubernetes/service.yaml"
+        }
+      }
+    }
+    
+    stage('Run Integration Tests') {
+      steps {
+        sh 'npm install'
+        sh 'npm run test:integration'
+      }
+    }
+    
+    stage('Deploy to Production') {
+      steps {
+        script {
+          def kubeContext = "kubectl --kubeconfig=${KUBE_CONFIG} --context=${KUBE_CLUSTER}"
+          sh "${kubeContext} config use-context ${KUBE_CLUSTER}-prod"
+          sh "${kubeContext} config set-context --current --namespace=${KUBE_NAMESPACE}"
+          sh "${kubeContext} apply -f kubernetes/deployment.yaml"
+          sh "${kubeContext} apply -f kubernetes/service.yaml"
+        }
+      }
+    }
+  }
+}
